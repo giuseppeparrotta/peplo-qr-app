@@ -1,140 +1,152 @@
 import streamlit as st
 import qrcode
 from PIL import Image, ImageDraw
-import math
-import random
 import os
 from io import BytesIO
+import math
 
 # --- CONFIGURAZIONE ---
-st.set_page_config(page_title="Peplo Heart QR", page_icon="❤️")
-st.title("❤️ Peplo Heart QR Generator")
-st.write("Genera un QR che forma un cuore completo, perfettamente scansionabile.")
+st.set_page_config(page_title="Peplo Total Heart QR", page_icon="❤️", layout="centered")
+st.title("❤️ Peplo Total Heart QR")
+st.write("Un cuore gigante fatto di cuori, che contiene il tuo QR code.")
 
 link_input = st.text_input("Inserisci Link:", "https://peplo.shop")
 
 # --- FUNZIONI DI DISEGNO ---
 
-def draw_heart_shape(draw, cx, cy, size, fill=None, outline=None):
-    """
-    Disegna un cuore vettoriale centrato in (cx, cy).
-    Accetta sia 'fill' (colore riempimento) che 'outline' (colore bordo).
-    """
-    points = []
-    # Usiamo più punti per renderlo morbido
-    for t in range(0, 360, 5): 
-        rad = math.radians(t)
-        # Formula geometrica del cuore
-        x = 16 * math.sin(rad)**3
-        y = 13 * math.cos(rad) - 5 * math.cos(2*rad) - 2 * math.cos(3*rad) - math.cos(4*rad)
-        
-        # Adattiamo scala e posizione
-        px = cx + x * (size / 35)
-        py = cy - y * (size / 35) # Invertiamo Y perché nei computer Y cresce verso il basso
-        points.append((px, py))
+def draw_single_heart(draw, x, y, size, color="black"):
+    """Disegna un singolo modulo a forma di cuore."""
+    # Usiamo un cuore leggermente più cicciotto per riempire bene lo spazio
+    m = size * 0.1 # Margine dinamico (10%)
     
-    # Disegno effettivo
-    draw.polygon(points, fill=fill, outline=outline)
+    # Cerchio sinistro
+    draw.ellipse([x + m, y + m, x + size/2 + m, y + size/2 + m], fill=color)
+    # Cerchio destro
+    draw.ellipse([x + size/2 - m, y + m, x + size - m, y + size/2 + m], fill=color)
+    # Triangolo inferiore (punta)
+    draw.polygon([
+        (x + m*1.5, y + size/2), 
+        (x + size/2, y + size - m), 
+        (x + size - m*1.5, y + size/2)
+    ], fill=color)
 
-def crea_qr_cuore_pieno(url):
-    # 1. SETUP QR (Versione alta per avere densità)
+def is_inside_big_heart(cx, cy, x, y, radius):
+    """Determina matematicamente se un punto (x,y) è dentro il cuore gigante."""
+    # Normalizza le coordinate rispetto al centro e al raggio
+    nx = (x - cx) / radius
+    ny = -(y - cy) / radius # Invertiamo Y per la grafica computerizzata
+    
+    # Formula parametrica del cuore
+    # (x^2 + y^2 - 1)^3 - x^2 * y^3 <= 0
+    try:
+        val = (nx**2 + ny**2 - 1)**3 - (nx**2 * (ny**3))
+        return val <= 0.02 # Usiamo una piccola tolleranza per bordi più morbidi
+    except:
+        return False
+
+# --- GENERATORE PRINCIPALE ---
+
+def crea_qr_cuore_totale(testo):
+    # 1. SETUP QR (Versione fissa per controllo dimensioni)
+    # Aumentiamo box_size a 25 per cuori PIÙ GRANDI come richiesto
+    ps = 25 
     qr = qrcode.QRCode(
-        version=5,
+        version=8, # Versione media per un buon equilibrio densità/grandezza
         error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=20,
-        border=1 # Bordo minimo, lo gestiamo noi
+        box_size=ps,
+        border=0 # Nessun bordo, lo gestiamo noi
     )
-    qr.add_data(url)
+    qr.add_data(testo)
     qr.make(fit=True)
-    qr_img = qr.make_image().convert("RGB")
     
-    # Dati per calcoli
     matrix = qr.get_matrix()
-    dim_matrix = len(matrix)
-    mod_size = 20 # Grandezza singolo modulo (cuoricino)
-    
-    # 2. CREAZIONE TELA (Più grande del QR per fare la forma a cuore)
-    canvas_w = dim_matrix * mod_size * 2 # Molto spazio ai lati
-    canvas_h = dim_matrix * mod_size * 1.8 
-    final_img = Image.new("RGB", (int(canvas_w), int(canvas_h)), "white")
+    qr_dim = len(matrix) # Numero di moduli per lato
+    qr_pixel_size = qr_dim * ps # Dimensione totale in pixel del quadrato QR
+
+    # 2. CREAZIONE TELA GIGANTE
+    # La tela deve essere molto più grande del QR per contenere il cuore
+    canvas_size = int(qr_pixel_size * 1.6) 
+    final_img = Image.new("RGB", (canvas_size, canvas_size), "white")
     draw = ImageDraw.Draw(final_img)
     
-    # Centro della tela
-    cx, cy = canvas_w // 2, canvas_h // 2
+    cx, cy = canvas_size // 2, canvas_size // 2 # Centro della tela
     
-    # 3. DEFINIAMO L'AREA DEL CUORE GIGANTE (Contenitore)
-    heart_radius = dim_matrix * mod_size * 0.75
-    
-    # Funzione per capire se un punto è dentro il cuore gigante
-    def is_inside_big_heart(px, py):
-        # Normalizziamo le coordinate rispetto al centro e al raggio
-        x = (px - cx) / (heart_radius / 35)
-        y = -(py - cy) / (heart_radius / 35)
-        try:
-            val = (x**2 + y**2 - 1)**3 - x**2 * y**3
-            return val <= 0
-        except:
-            return False
+    # Raggio del cuore gigante (un po' meno della metà della tela per lasciare margine)
+    heart_radius = (canvas_size // 2) * 0.9
 
-    # 4. DISEGNO DEL QR QUADRATO (AL CENTRO)
-    start_x = cx - (dim_matrix * mod_size) // 2
-    start_y = cy - (dim_matrix * mod_size) // 2
-    
-    for r in range(dim_matrix):
-        for c in range(dim_matrix):
-            x = start_x + c * mod_size
-            y = start_y + r * mod_size
+    # 3. FASE 1: RIEMPIMENTO DELLO SFONDO (Il "Cuore Pieno")
+    # Disegniamo una griglia di cuori su TUTTA la tela, se sono dentro la forma gigante
+    for y in range(0, canvas_size, ps):
+        for x in range(0, canvas_size, ps):
+            # Calcoliamo il centro del modulo corrente
+            mod_cx = x + ps // 2
+            mod_cy = y + ps // 2
             
-            # Gestione LOGO CENTRALE (lasciamo il buco)
-            # Calcoliamo il centro del QR
-            if (dim_matrix//2 - 4) < r < (dim_matrix//2 + 4) and (dim_matrix//2 - 4) < c < (dim_matrix//2 + 4):
-                continue
+            if is_inside_big_heart(cx, cy, mod_cx, mod_cy, heart_radius):
+                draw_single_heart(draw, x, y, ps, color="black")
 
-            if matrix[r][c]:
-                # FINDER PATTERNS (I 3 occhioni): Devono essere ben visibili
-                if (r < 7 and c < 7) or (r < 7 and c >= dim_matrix-7) or (r >= dim_matrix-7 and c < 7):
-                     draw.rectangle([x, y, x+mod_size, y+mod_size], fill="black")
-                else:
-                    # Moduli dati: Cuoricini
-                    draw_heart_shape(draw, x+mod_size//2, y+mod_size//2, mod_size*0.9, fill="black")
+    # 4. FASE 2: SOVRAPPOSIZIONE DEL QR CODE FUNZIONANTE
+    # Calcoliamo dove inizia il quadrato del QR al centro della tela
+    start_x_qr = cx - (qr_pixel_size // 2)
+    start_y_qr = cy - (qr_pixel_size // 2)
 
-    # 5. RIEMPIMENTO DECORATIVO ("Filler")
-    # Disegniamo cuoricini casuali fuori dal QR ma dentro il Cuore Gigante
-    # per dare l'illusione della forma completa
-    
-    step = mod_size # Griglia dei decori
-    for y in range(0, int(canvas_h), step):
-        for x in range(0, int(canvas_w), step):
-            # Se siamo dentro il QR, saltiamo
-            if start_x - step < x < start_x + (dim_matrix * mod_size) + step and \
-               start_y - step < y < start_y + (dim_matrix * mod_size) + step:
-                continue
-            
-            # Se siamo dentro la forma del cuore grande
-            if is_inside_big_heart(x, y):
-                # Aggiungiamo un cuoricino decorativo
-                # Leggermente più piccolo per differenziarlo dai dati
-                draw_heart_shape(draw, x, y, step*0.7, fill="black")
+    # Definiamo l'area centrale da saltare per il LOGO PEPLO
+    center_gap = qr_dim // 6
+    c_min_idx = qr_dim // 2 - center_gap
+    c_max_idx = qr_dim // 2 + center_gap
 
-    # 6. INSERIMENTO LOGO
+    for r in range(qr_dim):
+        for c in range(qr_dim):
+            # Coordinate pixel sulla tela grande
+            px = start_x_qr + c * ps
+            py = start_y_qr + r * ps
+
+            # Se siamo nell'area del logo centrale, puliamo e saltiamo
+            if c_min_idx < r < c_max_idx and c_min_idx < c < c_max_idx:
+                 draw.rectangle([px, py, px+ps, py+ps], fill="white")
+                 continue
+
+            # --- LOGICA DI SOVRAPPOSIZIONE ---
+            cell_is_black = matrix[r][c]
+
+            # Protezione Finder Patterns (i 3 angoli devono essere quadrati solidi)
+            is_finder = (r < 7 and c < 7) or \
+                        (r < 7 and c >= qr_dim-7) or \
+                        (r >= qr_dim-7 and c < 7)
+
+            if is_finder and cell_is_black:
+                 # Disegna quadrato nero solido (sovrascrive lo sfondo)
+                 draw.rectangle([px, py, px+ps, py+ps], fill="black")
+            elif cell_is_black:
+                 # È un modulo dati nero: Ridisegna il cuore (per sicurezza)
+                 draw_single_heart(draw, px, py, ps, color="black")
+            else:
+                 # IMPORTANTE: È un modulo BIANCO del QR.
+                 # Dobbiamo CANCELLARE il cuore di sfondo che c'è sotto!
+                 draw.rectangle([px, py, px+ps, py+ps], fill="white")
+
+    # 5. INSERIMENTO LOGO CENTRALE
     if os.path.exists("logo_peplo.jpg"):
         logo = Image.open("logo_peplo.jpg").convert("RGBA")
-        logo_w = mod_size * 7
-        logo.thumbnail((logo_w, logo_w), Image.Resampling.LANCZOS)
-        logo_pos = (int(cx - logo.size[0]//2), int(cy - logo.size[1]//2))
+        # Calcola la dimensione del buco bianco centrale
+        hole_size = (c_max_idx - c_min_idx) * ps
+        # Ridimensiona il logo per starci dentro (con un piccolo margine)
+        logo_target_size = int(hole_size * 0.9)
+        logo.thumbnail((logo_target_size, logo_target_size), Image.Resampling.LANCZOS)
         
-        # Sfondo bianco dietro logo
-        draw.rectangle([logo_pos[0]-10, logo_pos[1]-10, logo_pos[0]+logo.size[0]+10, logo_pos[1]+logo.size[1]+10], fill="white")
+        # Posiziona al centro esatto
+        logo_pos = (cx - logo.size[0]//2, cy - logo.size[1]//2)
         final_img.paste(logo, logo_pos, logo)
 
     return final_img
 
 # --- INTERFACCIA ---
-if st.button("Genera QR Cuore"):
-    with st.spinner('Creazione arte...'):
-        img = crea_qr_cuore_pieno(link_input)
-        st.image(img, caption="Forma a cuore completa")
+if st.button("Genera QR Cuore Totale"):
+    with st.spinner('Creazione del cuore gigante in corso...'):
+        img_finale = crea_qr_cuore_totale(link_input)
+        # Mostriamo l'immagine più grande in Streamlit
+        st.image(img_finale, caption="Scansiona il centro del cuore!", width=500)
         
         buf = BytesIO()
-        img.save(buf, format="PNG")
-        st.download_button("Scarica PNG", buf.getvalue(), "peplo_heart_shape.png", "image/png")
+        img_finale.save(buf, format="PNG")
+        st.download_button("Scarica Immagine PNG", buf.getvalue(), "peplo_total_heart.png", "image/png")
