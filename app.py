@@ -7,13 +7,19 @@ from io import BytesIO
 st.set_page_config(page_title="Peplo QR Generator", page_icon="❤️")
 
 st.title("❤️ Peplo QR Generator")
-st.write("Generatore di QR funzionante con cuoricini e logo Peplo.")
+st.write("Versione Ottimizzata: il logo non copre più i dati vitali.")
 
 link = st.text_input("Inserisci l'URL per il QR:", "https://peplo.shop")
 
-def crea_qr_peplo(testo):
-    # 1. Creazione QR base (Alta correzione per massima leggibilità)
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=20, border=4)
+def crea_qr_peplo_blindato(testo):
+    # 1. Creazione QR con Versione fissa (10) per avere più spazio
+    # L'error correction H è fondamentale per i QR artistici
+    qr = qrcode.QRCode(
+        version=10, 
+        error_correction=qrcode.constants.ERROR_CORRECT_H, 
+        box_size=20, 
+        border=4
+    )
     qr.add_data(testo)
     qr.make(fit=True)
     qr_img = qr.make_image().convert("RGB")
@@ -22,43 +28,51 @@ def crea_qr_peplo(testo):
     final_img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(final_img)
     
-    ps = 20 # Pixel size
+    ps = 20 # Dimensione del modulo
+    
+    # 2. Definiamo l'area "Proibita" (dove starà il logo)
+    # Calcoliamo il centro per lasciare un buco bianco perfetto
+    centro_inizio = (width // 2) - (width // 6)
+    centro_fine = (width // 2) + (width // 6)
+
     for y in range(0, height, ps):
         for x in range(0, width, ps):
+            # Se siamo nell'area centrale, saltiamo il disegno (lasciamo bianco)
+            if centro_inizio < x < centro_fine and centro_inizio < y < centro_fine:
+                continue
+                
             if qr_img.getpixel((x + 10, y + 10)) == (0, 0, 0):
-                # PROTEZIONE ANGOLI: Se siamo nei tre quadrati grandi, usiamo quadrati normali
-                # Questo garantisce che ogni telefono riesca a leggere il codice
+                # PROTEZIONE ANGOLI (Finder Patterns) - Devono essere quadrati!
                 if (x < ps*7 and y < ps*7) or (x < ps*7 and y > height-ps*8) or (x > width-ps*8 and y < ps*7):
                     draw.rectangle([x, y, x+ps, y+ps], fill="black")
                 else:
-                    # DISEGNO CUORE OTTIMIZZATO (più piccolo per leggibilità)
-                    m = 4 # Aumentiamo il margine per separare i cuori
-                    draw.ellipse([x+m, y+m, x+ps//2+1, y+ps//2+1], fill="black")
-                    draw.ellipse([x+ps//2-1, y+m, x+ps-m, y+ps//2+1], fill="black")
-                    draw.polygon([(x+m, y+ps//2), (x+ps//2, y+ps-m), (x+ps-m, y+ps//2)], fill="black")
+                    # DISEGNO CUORE (Leggermente più cicciotto per estetica)
+                    m = 3 
+                    draw.ellipse([x+m, y+m, x+ps//2+2, y+ps//2+2], fill="black")
+                    draw.ellipse([x+ps//2-2, y+m, x+ps-m, y+ps//2+2], fill="black")
+                    draw.polygon([(x+m, y+ps//2+1), (x+ps//2, y+ps-m), (x+ps-m, y+ps//2+1)], fill="black")
 
-    # 2. Inserimento LOGO LOCALE
+    # 3. Inserimento LOGO PEPLO
     try:
         if os.path.exists("logo_peplo.jpg"):
             logo = Image.open("logo_peplo.jpg").convert("RGBA")
-            logo_w = width // 5 # Logo leggermente più piccolo per non disturbare la lettura
-            logo_h = int((logo_w * logo.size[1]) / logo.size[0])
+            # Ridimensioniamo il logo per stare perfettamente nel "buco" creato
+            logo_w = (centro_fine - centro_inizio) - 20
+            ratio = logo.size[1] / logo.size[0]
+            logo_h = int(logo_w * ratio)
             logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
-            p = ((width - logo.size[0])//2, (height - logo.size[1])//2)
             
-            # Sfondo bianco pulito
-            pad = 15
-            draw.rectangle([p[0]-pad, p[1]-pad, p[0]+logo.size[0]+pad, p[1]+logo.size[1]+pad], fill="white")
+            p = ((width - logo.size[0])//2, (height - logo.size[1])//2)
             final_img.paste(logo, p, logo)
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Errore logo: {e}")
         
     return final_img
 
 if st.button("Genera QR Code"):
-    img = crea_qr_peplo(link)
+    img = crea_qr_peplo_blindato(link)
     st.image(img, use_container_width=True)
     
     buf = BytesIO()
     img.save(buf, format="PNG")
-    st.download_button("Scarica Immagine", buf.getvalue(), "qr_peplo_fix.png", "image/png")
+    st.download_button("Scarica Ora", buf.getvalue(), "qr_peplo_final.png", "image/png")
