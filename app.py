@@ -1,4 +1,4 @@
->>> import streamlit as st
+... import streamlit as st
 ... import qrcode
 ... from PIL import Image, ImageDraw
 ... import requests
@@ -74,4 +74,5 @@ if st.button("Genera QR Code"):
         data=byte_im,
         file_name=f"{nome_file_output}.png",
         mime="image/png"
+
 
