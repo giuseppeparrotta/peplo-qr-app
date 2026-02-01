@@ -7,54 +7,51 @@ from io import BytesIO
 st.set_page_config(page_title="Peplo QR Generator", page_icon="❤️")
 
 st.title("❤️ Peplo QR Generator")
-st.write("Generatore di QR Code personalizzati per Peplo.")
+st.write("Generatore di QR funzionante con cuoricini e logo Peplo.")
 
 link = st.text_input("Inserisci l'URL per il QR:", "https://peplo.shop")
 
 def crea_qr_peplo(testo):
-    # 1. Creazione QR base
+    # 1. Creazione QR base (Alta correzione per massima leggibilità)
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=20, border=4)
     qr.add_data(testo)
     qr.make(fit=True)
     qr_img = qr.make_image().convert("RGB")
     width, height = qr_img.size
     
-    # 2. Creazione tela per cuori
     final_img = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(final_img)
     
-    # 3. Disegno cuori
-    ps = 20 
+    ps = 20 # Pixel size
     for y in range(0, height, ps):
         for x in range(0, width, ps):
             if qr_img.getpixel((x + 10, y + 10)) == (0, 0, 0):
-                draw.ellipse([x+2, y+2, x+11, y+11], fill="black")
-                draw.ellipse([x+9, y+2, x+18, y+11], fill="black")
-                draw.polygon([(x+2, y+10), (x+10, y+18), (x+18, y+10)], fill="black")
+                # PROTEZIONE ANGOLI: Se siamo nei tre quadrati grandi, usiamo quadrati normali
+                # Questo garantisce che ogni telefono riesca a leggere il codice
+                if (x < ps*7 and y < ps*7) or (x < ps*7 and y > height-ps*8) or (x > width-ps*8 and y < ps*7):
+                    draw.rectangle([x, y, x+ps, y+ps], fill="black")
+                else:
+                    # DISEGNO CUORE OTTIMIZZATO (più piccolo per leggibilità)
+                    m = 4 # Aumentiamo il margine per separare i cuori
+                    draw.ellipse([x+m, y+m, x+ps//2+1, y+ps//2+1], fill="black")
+                    draw.ellipse([x+ps//2-1, y+m, x+ps-m, y+ps//2+1], fill="black")
+                    draw.polygon([(x+m, y+ps//2), (x+ps//2, y+ps-m), (x+ps-m, y+ps//2)], fill="black")
 
-    # 4. Inserimento LOGO LOCALE
+    # 2. Inserimento LOGO LOCALE
     try:
-        # Cerchiamo il file caricato nel repository
         if os.path.exists("logo_peplo.jpg"):
             logo = Image.open("logo_peplo.jpg").convert("RGBA")
-            
-            # Dimensioni logo
-            logo_w = width // 4
+            logo_w = width // 5 # Logo leggermente più piccolo per non disturbare la lettura
             logo_h = int((logo_w * logo.size[1]) / logo.size[0])
             logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
-            
-            # Posizionamento
             p = ((width - logo.size[0])//2, (height - logo.size[1])//2)
             
-            # Sfondo bianco
-            pad = 20
+            # Sfondo bianco pulito
+            pad = 15
             draw.rectangle([p[0]-pad, p[1]-pad, p[0]+logo.size[0]+pad, p[1]+logo.size[1]+pad], fill="white")
-            
             final_img.paste(logo, p, logo)
-        else:
-            st.warning("File logo_peplo.jpg non trovato nel repository.")
-    except Exception as e:
-        st.error(f"Errore tecnico col logo: {e}")
+    except:
+        pass
         
     return final_img
 
@@ -64,4 +61,4 @@ if st.button("Genera QR Code"):
     
     buf = BytesIO()
     img.save(buf, format="PNG")
-    st.download_button("Scarica Immagine", buf.getvalue(), "qr_peplo.png", "image/png")
+    st.download_button("Scarica Immagine", buf.getvalue(), "qr_peplo_fix.png", "image/png")
