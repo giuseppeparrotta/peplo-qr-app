@@ -3,49 +3,54 @@ import qrcode
 from PIL import Image, ImageDraw
 import os
 from io import BytesIO
-import math
 
-# --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Peplo Heart Perfect", page_icon="❤️", layout="centered")
-st.title("❤️ Peplo QR: Lobi Alti")
-st.write("QR Code posizionato in basso per lasciare ampio spazio alle curve superiori del cuore.")
+# --- CONFIGURAZIONE ---
+st.set_page_config(page_title="Peplo KeyChain Maker", page_icon="❤️", layout="centered")
+st.title("❤️ Peplo Portachiavi Generator")
+st.write("Genera QR per portachiavi contenente SOLO il Codice Fiscale.")
 
-link_input = st.text_input("Inserisci Link:", "https://peplo.shop")
+# --- INPUT ---
+cf_input = st.text_input("Inserisci Codice Fiscale:", "RSSMRA80A01H501U")
 
-# --- DISEGNO MODULO (Il singolo cuoricino) ---
+# Pulizia: Solo testo, maiuscolo, niente spazi
+final_data = cf_input.upper().strip()
+
+# Mostriamo cosa c'è dentro il QR
+if final_data:
+    st.info(f"Dato codificato: {final_data} (Lunghezza: {len(final_data)} car.)")
+
+# --- GRAFICA ---
+
 def draw_heart_module(draw, x, y, size, color="black"):
-    m = size * 0.15 # Margine per non farli toccare troppo
-    # Cerchio sx
+    # Moduli "grassi" per la stampa fisica
+    m = size * 0.05 
     draw.ellipse([x + m, y + m, x + size/2 + m/2, y + size/2 + m], fill=color)
-    # Cerchio dx
     draw.ellipse([x + size/2 - m/2, y + m, x + size - m, y + size/2 + m], fill=color)
-    # Punta
     draw.polygon([
-        (x + m*1.2, y + size/2),
-        (x + size/2, y + size - m*0.5),
-        (x + size - m*1.2, y + size/2)
+        (x + m, y + size/2),
+        (x + size/2, y + size - m*0.2),
+        (x + size - m, y + size/2)
     ], fill=color)
 
-# --- MATEMATICA DEL CUORE ---
 def is_inside_heart_shape(px, py, cx, cy, scale):
-    # Normalizza coordinate
     x = (px - cx) / scale
-    y = -(py - cy) / scale # Invertiamo Y
-    
-    # Formula del cuore "cicciotto"
+    y = -(py - cy) / scale 
     try:
         val = (x**2 + y**2 - 1)**3 - (x**2 * (y**3))
         return val <= 0
     except:
         return False
 
-# --- GENERATORE ---
-def crea_qr_lobi_alti(testo):
-    # 1. SETUP QR
-    box_size = 30 # Grande per definizione
+def crea_qr_portachiavi(testo):
+    # Box size alto per stampa definita (300dpi ready)
+    box_size = 60 
+    
+    # VERSIONE 2 + ECC H (High)
+    # Versione 2-H contiene fino a 20 caratteri alfanumerici.
+    # Il CF ne ha 16. È PERFETTO. Massima ridondanza, pixel enormi.
     qr = qrcode.QRCode(
-        version=6, 
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        version=2, 
+        error_correction=qrcode.constants.ERROR_CORRECT_H, # 30% di correzione errore!
         box_size=box_size,
         border=0
     )
@@ -56,50 +61,43 @@ def crea_qr_lobi_alti(testo):
     qr_cells = len(matrix)
     qr_pixel_dim = qr_cells * box_size
 
-    # 2. CALCOLO TELA
-    # La tela deve essere più alta per accogliere i lobi sopra il QR
-    canvas_w = int(qr_pixel_dim * 1.5) 
-    canvas_h = int(qr_pixel_dim * 1.4) 
+    # Tela (più abbondante per la forma a cuore)
+    canvas_w = int(qr_pixel_dim * 1.6) 
+    canvas_h = int(qr_pixel_dim * 1.5)
     
     final_img = Image.new("RGB", (canvas_w, canvas_h), "white")
     draw = ImageDraw.Draw(final_img)
     
-    cx = canvas_w // 2
-    cy = canvas_h // 2
-    
-    # Scala del cuore (Molto grande per fare l'effetto avvolgente)
+    cx, cy = canvas_w // 2, canvas_h // 2
     heart_scale = canvas_w / 2.7
 
-    # 3. SPOSTAMENTO QR (IL TRUCCO)
-    # Spostiamo il QR in BASSO (aumentando Y) di 4 moduli
-    # Questo fa sì che il cuore sembri "salire" sopra il QR
-    qr_shift_y = 4 * box_size 
+    # Spostamento in basso (Lobi Alti)
+    # Con la versione 2 la matrice è piccola (25x25), quindi abbassiamo di meno moduli ma proporzionati
+    qr_shift_y = 3 * box_size 
     
-    # Calcolo coordinate angolo in alto a sinistra del QR
     qr_start_x = cx - (qr_pixel_dim // 2)
     qr_start_y = cy - (qr_pixel_dim // 2) + qr_shift_y
-
-    # Centro geometrico del cuore (lo alziamo un po' per compensare il QR basso)
     heart_center_cy = cy + (box_size * 2)
 
-    # 4. DISEGNO SFONDO (TEXTURE CUORI)
+    # 1. Sfondo Texture
     for y in range(0, canvas_h, box_size):
         for x in range(0, canvas_w, box_size):
-            # Verifichiamo se siamo dentro il cuore gigante
+            # Controllo geometrico
             if is_inside_heart_shape(x + box_size/2, y + box_size/2, cx, heart_center_cy, heart_scale):
                 draw_heart_module(draw, x, y, box_size, color="black")
 
-    # 5. SOVRAPPOSIZIONE QR CODE
-    center_gap = qr_cells // 6
+    # 2. QR Sovrapposto
+    # Calcolo buco centrale per logo
+    # In Ver 2 (25x25), un gap di 4 o 6 è sufficiente
+    center_gap = 4 
     mid = qr_cells // 2
 
     for r in range(qr_cells):
         for c in range(qr_cells):
-            # Posizione pixel sulla tela (tenendo conto dello spostamento in basso)
             px = qr_start_x + c * box_size
             py = qr_start_y + r * box_size
             
-            # Salta area logo centrale
+            # Buco Logo
             if (mid - center_gap) < r < (mid + center_gap) and \
                (mid - center_gap) < c < (mid + center_gap):
                 draw.rectangle([px, py, px+box_size, py+box_size], fill="white")
@@ -107,7 +105,7 @@ def crea_qr_lobi_alti(testo):
 
             cell = matrix[r][c]
             
-            # Finder Patterns (Angoli solidi per scansione)
+            # Finder Patterns (Angoli)
             is_finder = (r < 7 and c < 7) or \
                         (r < 7 and c >= qr_cells-7) or \
                         (r >= qr_cells-7 and c < 7)
@@ -118,13 +116,11 @@ def crea_qr_lobi_alti(testo):
                 else:
                     draw.rectangle([px, py, px+box_size, py+box_size], fill="white")
             elif cell:
-                # Modulo NERO -> Disegna cuore (ridondante su sfondo nero, ma serve se il QR esce dalla sagoma)
                 draw_heart_module(draw, px, py, box_size, color="black")
             else:
-                # Modulo BIANCO -> CANCELLA il cuore di sfondo
                 draw.rectangle([px, py, px+box_size, py+box_size], fill="white")
 
-    # 6. LOGO PEPLO
+    # 3. Logo
     if os.path.exists("logo_peplo.jpg"):
         try:
             logo = Image.open("logo_peplo.jpg").convert("RGBA")
@@ -141,11 +137,19 @@ def crea_qr_lobi_alti(testo):
     return final_img
 
 # --- UI ---
-if st.button("Genera QR Definitivo"):
-    with st.spinner('Creazione in corso...'):
-        img = crea_qr_lobi_alti(link_input)
-        st.image(img, caption="Curve alte e QR integrato", width=500)
-        
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        st.download_button("Scarica PNG", buf.getvalue(), "peplo_lobi_alti.png", "image/png")
+if st.button("Genera File Portachiavi"):
+    if len(final_data) == 0:
+        st.error("Inserisci un codice fiscale!")
+    else:
+        with st.spinner('Creazione Matrice ad Alta Resistenza...'):
+            img = crea_qr_portachiavi(final_data)
+            st.image(img, caption=f"Fidelity Key: {final_data}", width=400)
+            
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            st.download_button(
+                label=f"Scarica PNG {final_data}", 
+                data=buf.getvalue(), 
+                file_name=f"keychain_{final_data}.png", 
+                mime="image/png"
+            )
